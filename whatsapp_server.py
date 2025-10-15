@@ -100,6 +100,7 @@ async def send_typing_indicator(to: str, message_id: str) -> None:
         }
     }
     
+    # Use the same messages endpoint for typing indicator
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(WHATSAPP_API_URL, headers=headers, json=payload) as response:
