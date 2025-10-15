@@ -93,11 +93,8 @@ async def send_typing_indicator(to: str, message_id: str) -> None:
     
     payload = {
         "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {
-            "body": ""
-        },
+        "status": "read",
+        "message_id": message_id,
         "typing_indicator": {
             "type": "text"
         }
@@ -128,17 +125,20 @@ def get_or_create_thread(phone_number: str) -> str:
 async def process_whatsapp_message(from_number: str, message_text: str, message_id: str) -> None:
     """Process incoming WhatsApp message through the database agent"""
     try:
+        print(f"Processing message from {from_number}: {message_text}")
+        print(f"Message ID: {message_id}")
+        
         # Get or create thread for this conversation
         thread_id = get_or_create_thread(from_number)
         thread_data = conversation_threads[from_number]
         
-        # Send typing indicator first
+        # Send typing indicator with message ID (this marks as read AND shows typing)
         await send_typing_indicator(from_number, message_id)
         
         # Add user message to state
         thread_data["state"]["messages"].append({"content": message_text, "type": "human"})
         
-        # Process through database agent
+        # Process through database agent (typing indicator will show during this time)
         ai_response = database_agent.process_message(message_text)
         
         # Add AI response to state
@@ -271,11 +271,15 @@ async def receive_webhook(request: Request):
                             message_text = message.get("text", {}).get("body", "")
                             message_id = message.get("id")
                             
+                            print(f"Processing message from {from_number}: {message_text} (ID: {message_id})")
+                            
                             if from_number and message_text and message_id:
                                 # Process message asynchronously
                                 asyncio.create_task(
                                     process_whatsapp_message(from_number, message_text, message_id)
                                 )
+                            else:
+                                print(f"Missing required fields - from: {from_number}, text: {message_text}, id: {message_id}")
         
         return JSONResponse({"status": "success"})
         
