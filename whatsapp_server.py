@@ -93,8 +93,11 @@ async def send_typing_indicator(to: str, message_id: str) -> None:
     
     payload = {
         "messaging_product": "whatsapp",
-        "status": "read",
-        "message_id": message_id,
+        "to": to,
+        "type": "text",
+        "text": {
+            "body": ""
+        },
         "typing_indicator": {
             "type": "text"
         }
@@ -105,6 +108,9 @@ async def send_typing_indicator(to: str, message_id: str) -> None:
             async with session.post(WHATSAPP_API_URL, headers=headers, json=payload) as response:
                 if response.status == 200:
                     print(f"Typing indicator sent to {to}")
+                else:
+                    result = await response.json()
+                    print(f"Error sending typing indicator: {result}")
         except Exception as e:
             print(f"Error sending typing indicator: {e}")
 
@@ -126,7 +132,7 @@ async def process_whatsapp_message(from_number: str, message_text: str, message_
         thread_id = get_or_create_thread(from_number)
         thread_data = conversation_threads[from_number]
         
-        # Send typing indicator
+        # Send typing indicator first
         await send_typing_indicator(from_number, message_id)
         
         # Add user message to state
@@ -138,7 +144,7 @@ async def process_whatsapp_message(from_number: str, message_text: str, message_
         # Add AI response to state
         thread_data["state"]["messages"].append({"content": ai_response, "type": "ai"})
         
-        # Send response back to WhatsApp
+        # Send actual response back to WhatsApp
         await send_whatsapp_message(from_number, ai_response, message_id)
         
     except Exception as e:
