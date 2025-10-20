@@ -80,6 +80,7 @@ async def chat_stream_endpoint(request: Request):
                 
                 # Send chunk every few words
                 if i % 3 == 0 or i == len(words) - 1:
+                    # Emit as SSE chunk
                     yield f"data: {json.dumps({'content': current_text})}\n\n"
                     await asyncio.sleep(0.05)  # Small delay for streaming effect
             
@@ -88,10 +89,11 @@ async def chat_stream_endpoint(request: Request):
 
         return StreamingResponse(
             generate_stream(),
-            media_type="text/plain",
+            media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
             }
         )
 

@@ -3,7 +3,7 @@ import json
 import time
 import logging
 from typing import Dict, Any, List, Optional, Literal
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from sqlalchemy import create_engine, Column, Integer, String, Text, Date, DateTime, ForeignKey, func, text, inspect, ARRAY, CheckConstraint, Boolean
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -507,5 +507,252 @@ def confirm_field_correction(table: str, record_id: int, field: str, corrected_v
         return {
             "success": False,
             "error": f"Failed to update record: {str(e)}"
+        }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Thought Logging and Reminder Tools
+# ──────────────────────────────────────────────────────────────────────────────
+
+class LogThoughtInput(BaseModel):
+    thought: str = Field(description="The thought or insight to log")
+    category: Optional[str] = Field(default="general", description="Category of the thought (e.g., project, health, task, insight)")
+    tags: Optional[List[str]] = Field(default=None, description="Tags to categorize the thought")
+
+class LogThoughtOutput(BaseModel):
+    success: bool = Field(description="Operation success status")
+    thought_id: Optional[int] = Field(description="Logged thought ID")
+    message: str = Field(description="Operation result message")
+    error: Optional[str] = Field(description="Error message if failed")
+
+class AddReminderInput(BaseModel):
+    reminder_text: str = Field(description="The reminder text")
+    due_time: Optional[str] = Field(default=None, description="When the reminder should trigger (e.g., '21:30', 'tomorrow 9am', 'in 2 hours')")
+    priority: Optional[str] = Field(default="medium", description="Priority level: low, medium, high")
+    category: Optional[str] = Field(default="general", description="Category of the reminder")
+
+class AddReminderOutput(BaseModel):
+    success: bool = Field(description="Operation success status")
+    reminder_id: Optional[int] = Field(description="Created reminder ID")
+    message: str = Field(description="Operation result message")
+    error: Optional[str] = Field(description="Error message if failed")
+
+@tool("log_thought", args_schema=LogThoughtInput, return_direct=False)
+def log_thought(thought: str, category: str = "general", tags: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Log a thought, insight, or idea for future reference"""
+    try:
+        import csv
+        import os
+        
+        # Create logs directory if it doesn't exist
+        logs_dir = "logs"
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        # CSV file path
+        csv_file = os.path.join(logs_dir, "thoughts.csv")
+        
+        # Check if file exists to determine if we need headers
+        file_exists = os.path.exists(csv_file)
+        
+        # Prepare data
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        tags_str = ", ".join(tags) if tags else ""
+        
+        # Write to CSV
+        with open(csv_file, 'a', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            
+            # Write headers if file is new
+            if not file_exists:
+                writer.writerow(['timestamp', 'thought', 'category', 'tags'])
+            
+            # Write the thought
+            writer.writerow([timestamp, thought, category, tags_str])
+        
+        return {
+            "success": True,
+            "message": f"✅ Thought logged successfully: '{thought[:50]}{'...' if len(thought) > 50 else ''}'"
+        }
+            
+    except Exception as e:
+        logger.error(f"Error logging thought: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Failed to log thought: {str(e)}"
+        }
+
+@tool("add_reminder", args_schema=AddReminderInput, return_direct=False)
+def add_reminder(reminder_text: str, due_time: Optional[str] = None, priority: str = "medium", category: str = "general") -> Dict[str, Any]:
+    """Add a reminder for a specific time or task"""
+    try:
+        import csv
+        import os
+        
+        # Create logs directory if it doesn't exist
+        logs_dir = "logs"
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        # CSV file path
+        csv_file = os.path.join(logs_dir, "reminders.csv")
+        
+        # Check if file exists to determine if we need headers
+        file_exists = os.path.exists(csv_file)
+        
+        # Parse due time if provided
+        due_date_str = ""
+        if due_time:
+            # Simple time parsing - you can enhance this
+            if "21:30" in due_time or "9:30pm" in due_time.lower():
+                due_date = datetime.now().replace(hour=21, minute=30, second=0, microsecond=0)
+                if due_date < datetime.now():
+                    due_date = due_date.replace(day=due_date.day + 1)
+                due_date_str = due_date.strftime('%Y-%m-%d %H:%M')
+            elif "tomorrow" in due_time.lower():
+                due_date = datetime.now().replace(hour=9, minute=0, second=0, microsecond=0)
+                due_date = due_date.replace(day=due_date.day + 1)
+                due_date_str = due_date.strftime('%Y-%m-%d %H:%M')
+            else:
+                # Default to 1 hour from now if can't parse
+                due_date = datetime.now().replace(minute=datetime.now().minute + 60)
+                due_date_str = due_date.strftime('%Y-%m-%d %H:%M')
+        
+        # Prepare data
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Write to CSV
+        with open(csv_file, 'a', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            
+            # Write headers if file is new
+            if not file_exists:
+                writer.writerow(['timestamp', 'reminder_text', 'due_time', 'priority', 'category', 'status'])
+            
+            # Write the reminder
+            writer.writerow([timestamp, reminder_text, due_date_str, priority, category, 'pending'])
+        
+        due_info = f" for {due_date_str}" if due_date_str else ""
+        return {
+            "success": True,
+            "message": f"⏰ Reminder added successfully: '{reminder_text[:50]}{'...' if len(reminder_text) > 50 else ''}'{due_info}"
+        }
+            
+    except Exception as e:
+        logger.error(f"Error adding reminder: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Failed to add reminder: {str(e)}"
+        }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Morning Briefing Tool
+# ──────────────────────────────────────────────────────────────────────────────
+
+class MorningBriefingInput(BaseModel):
+    include_overdue: bool = Field(default=True, description="Include overdue tasks in briefing")
+    include_today: bool = Field(default=True, description="Include today's tasks in briefing")
+    include_recent_thoughts: bool = Field(default=False, description="Include recent thoughts and insights")
+
+class MorningBriefingOutput(BaseModel):
+    success: bool = Field(description="Operation success status")
+    briefing: Dict[str, Any] = Field(description="Morning briefing content")
+    message: str = Field(description="Operation result message")
+    error: Optional[str] = Field(description="Error message if failed")
+
+@tool("get_morning_briefing", args_schema=MorningBriefingInput, return_direct=False)
+def get_morning_briefing(include_overdue: bool = True, include_today: bool = True, include_recent_thoughts: bool = True) -> Dict[str, Any]:
+    """Get a morning briefing with current projects, tasks, and recent thoughts"""
+    try:
+        session = get_session()
+        try:
+            briefing = {
+                "date": datetime.now().strftime('%Y-%m-%d'),
+                "time": datetime.now().strftime('%H:%M'),
+                "projects": [],
+                "tasks": [],
+                "overdue_tasks": [],
+                "recent_thoughts": []
+            }
+            
+            # Get active projects
+            active_projects = session.query(Project).filter(
+                Project.status.in_(['Not started', 'In progress'])
+            ).limit(5).all()
+            
+            for project in active_projects:
+                briefing["projects"].append({
+                    "id": project.id,
+                    "name": project.name,
+                    "status": project.status,
+                    "priority": project.priority,
+                    "deadline": project.deadline.strftime('%Y-%m-%d') if project.deadline else None
+                })
+            
+            # Get today's tasks
+            if include_today:
+                today = datetime.now().date()
+                today_tasks = session.query(Task).filter(
+                    Task.due_date >= today,
+                    Task.due_date < today + timedelta(days=1),
+                    Task.status.in_(['Inbox', 'Next (P2)', 'Now (P1)', 'In progress'])
+                ).limit(10).all()
+                
+                for task in today_tasks:
+                    briefing["tasks"].append({
+                        "id": task.id,
+                        "name": task.name,
+                        "status": task.status,
+                        "due_date": task.due_date.strftime('%Y-%m-%d %H:%M') if task.due_date else None
+                    })
+            
+            # Get overdue tasks
+            if include_overdue:
+                overdue_tasks = session.query(Task).filter(
+                    Task.due_date < datetime.now(),
+                    Task.status.in_(['Inbox', 'Next (P2)', 'Now (P1)', 'In progress'])
+                ).limit(10).all()
+                
+                for task in overdue_tasks:
+                    briefing["overdue_tasks"].append({
+                        "id": task.id,
+                        "name": task.name,
+                        "status": task.status,
+                        "due_date": task.due_date.strftime('%Y-%m-%d %H:%M') if task.due_date else None,
+                        "days_overdue": (datetime.now().date() - task.due_date.date()).days if task.due_date else 0
+                    })
+            
+            # Get recent thoughts
+            if include_recent_thoughts:
+                try:
+                    import csv
+                    thoughts_file = "logs/thoughts.csv"
+                    if os.path.exists(thoughts_file):
+                        with open(thoughts_file, 'r', encoding='utf-8') as file:
+                            reader = csv.DictReader(file)
+                            thoughts = list(reader)
+                            # Get last 5 thoughts
+                            recent_thoughts = thoughts[-5:] if len(thoughts) > 5 else thoughts
+                            
+                            for thought in recent_thoughts:
+                                briefing["recent_thoughts"].append({
+                                    "timestamp": thought.get('timestamp', ''),
+                                    "thought": thought.get('thought', ''),
+                                    "category": thought.get('category', ''),
+                                    "tags": thought.get('tags', '')
+                                })
+                except Exception as e:
+                    logger.warning(f"Could not load recent thoughts: {e}")
+            
+            return {
+                "success": True,
+                "briefing": briefing,
+                "message": f"Morning briefing generated for {briefing['date']}"
+            }
+        finally:
+            session.close()
+            
+    except Exception as e:
+        logger.error(f"Error generating morning briefing: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Failed to generate morning briefing: {str(e)}"
         }
 
